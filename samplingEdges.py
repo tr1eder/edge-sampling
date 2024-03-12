@@ -109,6 +109,10 @@ class LoopHole():
         
         return len(self.L1) * dPlusAvg / dMinusAvg
     
+    def calculate_rs0(self) -> None:
+        self.rs0 = 3.141592
+        raise NotImplementedError
+    
     def reach_Lge2(self) -> VRSC:
         def find_w() -> int:
             while True: # gets stuck if L2 empty
@@ -167,7 +171,7 @@ class LoopHole():
             elif bucket == 1:   # sample from E1
                 edges.append(self.sample_edge_E1())
             else:               # sample from E2
-                raise NotImplementedError
+                edges.append(self.sample_edge_E2())
         return edges
     
     def sample_edge_E0(self) -> UEdge:
@@ -185,6 +189,25 @@ class LoopHole():
         Samples an edge from E1
         """
         raise NotImplementedError
+    
+    def sample_edge_E2(self) -> UEdge:
+        """
+        Samples an edge from E2
+        """
+        def sample_rejection():
+            _, C, rs = self.reach_Lge2()
+            probability = min(self.rs0 / rs, 1)
+            if Rand.random() < probability:
+                return C
+            else:
+                return sample_rejection()
+        
+        C = sample_rejection()
+        edges = [UEdge(u, v) for u in C
+                             for v in self.neighsOf(u).intersection(C)]
+        return Rand.choice(edges)
+        
+
     
     def plot(self, type: PlotType = PlotType.MY) -> None:
         if type == PlotType.MY:
@@ -332,6 +355,7 @@ if __name__ == "__main__":
     to_id = 130
     loophole = LoopHole("facebook_combined/facebook_combined.txt", from_id, to_id)
     loophole.generate_L0(v0=from_id, l0_percentage_size=0.04)
+    loophole.sample_edges(estimate_E=[10000, 70000, 8234], num_samples=100)
 
     loophole.plot()
 

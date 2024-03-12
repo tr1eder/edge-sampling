@@ -24,3 +24,7 @@ class Rand:
     @staticmethod
     def choice(seq: list[T]) -> T:
         return random.choice(seq)
+    
+    @staticmethod
+    def random() -> float:
+        return random.random()
