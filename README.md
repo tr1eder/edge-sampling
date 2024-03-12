@@ -13,10 +13,9 @@ A work-in-progress on sampling edges/triangles or other structures in a large so
 
 ## Visuals
 - `graph.png` shows a visual of a small graph, where
-  - <font color="red">red</font> nodes/edges are of $L_0$/$E_0$,
-  - blue nodes/edges are of $L_1$/$E_1$,
-  - black nodes/edges are of $L_{\ge2},E_{\ge2}$
-  - <span style="color:red">This text is red</span>
+  - red nodes/edges are of $L_0 / E_0$,
+  - blue nodes/edges are of $L_1 / E_1$,
+  - black nodes/edges are of $L_{\ge2} / E_{\ge2}$
 
 
 ## TODO
