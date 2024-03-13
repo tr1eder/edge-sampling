@@ -109,6 +109,14 @@ class LoopHole():
         
         return len(self.L1) * dPlusAvg / dMinusAvg
     
+    def estimate_m1(self) -> None:
+        self.m1bar = 314
+        raise NotImplementedError
+    
+    def estimate_m2(self) -> None:
+        self.m1bar = 314
+        raise NotImplementedError
+    
     def calculate_rs0(self) -> None:
         self.rs0 = 3.141592
         raise NotImplementedError
@@ -188,15 +196,32 @@ class LoopHole():
         """
         Samples an edge from E1
         """
-        raise NotImplementedError
+        def sample_once():
+            edge: UEdge = self.E01.sample()
+            u = edge.a if edge.a in self.L0 else edge.b
+            v = edge.a if edge.a in self.L1 else edge.b
+            w = Rand.choice(list(self.neighsOf(v).difference(self.L0)))
+            return v, w
+        
+        v, w = sample_once()
+        prob = len(self.neighsOf(v).difference(self.L0)) / len(self.neighsOf(v).intersection(self.L0))
+        prob *= self.E01.size() / (2*self.m1bar)
+        if Rand.random() < prob:
+            return UEdge(v, w)
+        else:
+            return self.sample_edge_E1()
+
     
-    def sample_edge_E2(self) -> UEdge:
+    def sample_edge_E2(self) -> UEdge: # ! WE ARE MISSING OUT ON EDGES THAT CONNECT TWO DISTINCT C COMPONENTS!!
         """
         Samples an edge from E2
         """
         def sample_rejection():
             _, C, rs = self.reach_Lge2()
-            probability = min(self.rs0 / rs, 1)
+            # prob being above 1 means we absolutely have to pick it because we come across it so rarely
+            # that we are actually underestimating the chances of it being sampled, 
+            # which is why these are defined as unreachable, i.e. we can't give the fairness guarantee.
+            probability = min(self.rs0 / rs, 1) 
             if Rand.random() < probability:
                 return C
             else:
