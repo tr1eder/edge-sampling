@@ -376,18 +376,18 @@ class AdjUndirected(Adj):
     
 if __name__ == "__main__":
     Rand.seed(12345689)
-    from_id = 10
-    to_id = 130
+    from_id = 0
+    to_id = 100000
     loophole = LoopHole("facebook_combined/facebook_combined.txt", from_id, to_id)
     loophole.generate_L0(v0=from_id, l0_percentage_size=0.04)
-    loophole.sample_edges(estimate_E=[10000, 70000, 8234], num_samples=100)
+    # loophole.sample_edges(estimate_E=[10000, 70000, 8234], num_samples=100)
 
-    loophole.plot()
+    # loophole.plot()
 
     
-    for i in [2, 5, 10, 20, 50, 200, 1000]:
-        for j in [2, 5, 10, 50, 200, 1000]:
-            print (f"from (s1={i}, sge2={j}):", loophole.estimate_lge2(i, j))
+    # for i in [2, 5, 10, 20, 50, 200, 1000]:
+    #     for j in [2, 5, 10, 50, 200, 1000]:
+    #         print (f"from (s1={i}, sge2={j}):", loophole.estimate_lge2(i, j))
 
 
 

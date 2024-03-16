@@ -26,6 +26,9 @@ class DEdge(Edge):
 
 class UEdge(Edge):
     # Rep Inv: self.a < self.b
+    a: int
+    b: int
+    # l_a: int = 42
     def __init__(self, a: int, b: int) -> None:
         if a == b: raise ValueError("a and b cannot be equal")
         self.a = min(a, b)
@@ -40,6 +43,14 @@ class UEdge(Edge):
 
     def __repr__(self) -> str:
         return f"{{{self.a}, {self.b}}}"
+    
+    def inrange(self, start: int, end: int) -> bool:
+        return start <= self.a < self.b < end
+    
+    # @property
+    # def color(self) -> str:
+    #     return "red" if min() == 0 else "blue" if self.l == 1 else "gray"
+
     
 ## testing
 # u1 = UEdge(1, 2)
