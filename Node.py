@@ -54,15 +54,6 @@ class Node:
         if self._neigh_Lge2 is None:
             self._neigh_Lge2 = list(filter(lambda n: n.l>=2, map(lambda nr: self.g.nodes[nr], (self.g.getneighs(self.nr)))))
         return self._neigh_Lge2
-    
-    # def moveneigh(self, node: "Node", old_l: int) -> None: # the neighbor node is moved to old_l to node.l
-    #     if node.l == 0:
-    #         if old_l == 0: raise ValueError("old_l cannot be 0")
-    #         elif old_l == 1: self.neigh_L1.remove(node) #! expensive
-    #         elif old_l == 2: raise ValueError("old_l cannot be 2")
-    #         node.neigh_L0.append(self)
-    #     else:
-    #         raise ValueError("not implemented")
 
 
     @property
