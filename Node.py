@@ -13,18 +13,18 @@ from typing import Optional
 class Node:
     nr: int
     oldlabel: int
-    l: int = 42
+    l: int
     _neighs: Optional[list["Node"]] = None
     _neigh_L0: list["Node"]             # actually always stores the neighbors to L0
     # _neigh_L0_size: int = 0
     _neigh_L1: Optional[list["Node"]] = None # only exists if l == 0 or if it is memorized
     _neigh_Lge2: Optional[list["Node"]] = None # only exists if memorized
 
-    def __init__(self, g, nr: int, oldlabel: int) -> None:
-        self._neigh_L0 = []
-        self.g = g
+    def __init__(self, nr: int, oldlabel: int, l: int = 42) -> None:
         self.nr = nr
         self.oldlabel = oldlabel
+        self.l = l
+        self._neigh_L0 = []
 
     def addneigh_L0(self, nei: "Node") -> None:
         assert self.l <= 1
@@ -35,9 +35,9 @@ class Node:
         if self._neigh_L1 is None: self._neigh_L1 = []
         self._neigh_L1.append(nei)
 
-    def getneighs(self) -> list["Node"]:
+    def getneighs(self, g) -> list["Node"]:
         if self._neighs is None:
-            self._neighs = list(map(lambda nr: self.g.nodes[nr], (self.g.getneighs(self.nr))))
+            self._neighs = list(map(lambda nr: g.nodes[nr], (g.getneighs(self.nr))))
         return self._neighs
     
     def getneighs_L0(self) -> list["Node"]:
@@ -46,13 +46,13 @@ class Node:
     # def neigh_L0_size(self) -> int:
     #     return self._neigh_L0_size
     
-    def getneighs_L1(self) -> list["Node"]: ## ! only allowed to call after L0 created
+    def getneighs_L1(self, g) -> list["Node"]: ## ! only allowed to call after L0 created
         if self._neigh_L1 is None:
-            self._neigh_L1 = list(filter(lambda n: n.l==1, map(lambda nr: self.g.nodes[nr], (self.g.getneighs(self.nr)))))
+            self._neigh_L1 = list(filter(lambda n: n.l==1, map(lambda nr: g.nodes[nr], (g.getneighs(self.nr)))))
         return self._neigh_L1
-    def getneighs_Lge2(self) -> list["Node"]: ## ! only allowed to call after L0 created
+    def getneighs_Lge2(self, g) -> list["Node"]: ## ! only allowed to call after L0 created
         if self._neigh_Lge2 is None:
-            self._neigh_Lge2 = list(filter(lambda n: n.l>=2, map(lambda nr: self.g.nodes[nr], (self.g.getneighs(self.nr)))))
+            self._neigh_Lge2 = list(filter(lambda n: n.l>=2, map(lambda nr: g.nodes[nr], (g.getneighs(self.nr)))))
         return self._neigh_Lge2
 
 

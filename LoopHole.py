@@ -1,9 +1,10 @@
-import re, pickle, json
+import re, pickle, json, sys, time
 import numpy as np
-from timeit import timeit
+# from timeit import timeit
 from subprocess import run
 from scipy.sparse import csr_matrix
 from typing import Callable, Optional, Generic, TypeVar, Set
+from functools import wraps
 from enum import Enum
 ## my ##
 from Edge import UEdge
@@ -27,8 +28,10 @@ only_use3 = lambda e: e.inrange(10, 20)
 
 ## do enumeration
 class THEORYMODEL(Enum):
-    WEAK = 0
-    STRONG = 1
+    WEAK = "knows all neighbors"
+    MEDIUM = "knows all neighbors and their degrees"
+    STRONG = "knows all neighbors and knows highest-degree nodes"
+
 
 class E_PARTITION(Enum):
     E00 = "00"
@@ -64,28 +67,34 @@ def edge_in(g: "LoopHole", e: UEdge) -> E_PARTITION:
 
 
 class L0Set:
-    def __init__(self, g: "LoopHole") -> None:
-        self.g = g
+    def __init__(self) -> None:
+        # self.g = g
         self.nodes: Set[Node] = set()
-    def add(self, node: Node) -> None:
+    def add(self, g: "LoopHole", node: Node) -> None:
         assert node.l == 1
         node.l = 0
 
-        for nei in node.getneighs():
+        for nei in node.getneighs(g):
             if nei.l == 0: # in L0 already, they knew each other
                 assert nei._neigh_L1 is not None
                 nei._neigh_L1.remove(node) # expensive, costs O(n), but only improves from 26 to 25 seconds
                 nei.addneigh_L0(node) # change L1-priority ? no, bc. nei is in L0
             elif nei.l == 1: # in L1, they did not know each other
                 nei.addneigh_L0(node) # change L1-priority ? yes!
-                self.g.L1.increase_key(nei)
+                g.L1.increase_key(nei)
                 node.addneigh_L1(nei)
             else: # was in Lge2 -> L1, they did not know each other
                 nei.l = 1
                 nei.addneigh_L0(node) #change L1-priority ? no, because we add it now
-                self.g.L1.add(nei)
+                g.L1.add(nei)
                 node.addneigh_L1(nei)
         self.nodes.add(node)
+
+    @classmethod
+    def deserialize(cls, l0nodes):
+        l0 = cls()
+        l0.nodes = set(l0nodes)
+        return l0
         
 class L1Set:
     def __init__(self) -> None:
@@ -97,11 +106,34 @@ class L1Set:
         self.nodes.increase_key(node, len(node.getneighs_L0()))
     def extract_max(self) -> Node:
         return self.nodes.extract_max()
+    
+class L1Set_Medium(L1Set):
+    def __init__(self, g) -> None:
+        super().__init__()
+        self.g = g
+    def add(self, node: Node) -> None:
+        node.l = 1
+        self.nodes.insert(node, self.g.degrees[node.nr])
+    def increase_key(self, node: Node) -> None:
+        return
+    
+class L1Set_Strong(L1Set):
+    def __init__(self, g) -> None:
+        super().__init__()
+        self.g = g
+        self.sorted_degrees_nodes = sorted(zip(g.degrees, g.nodes), key=lambda x: x[0], reverse=False)
+    def extract_max(self) -> Node:
+        node = self.sorted_degrees_nodes.pop()[1]
+        node.l = 1
+        self.add(node)
+        return node
+    
 
 
 class LoopHole: 
     edges: list[UEdge]
     nodes: list[Node]
+    degrees: list[int]
     csr: csr_matrix
     m: int
     n: int
@@ -124,7 +156,7 @@ class LoopHole:
             ## rename nodes to 0...n-1
             edgeset = set(e.a for e in edges) | set(e.b for e in edges)
             nodetoint = {node: i for i, node in enumerate(edgeset)}
-            self.nodes = list(map(lambda item: Node(self, item[1], item[0]), nodetoint.items()))
+            self.nodes = list(map(lambda item: Node(item[1], item[0]), nodetoint.items()))
             self.edges = list(map(lambda e: UEdge(nodetoint[e.a], nodetoint[e.b]), edges))
             self.m = len(self.edges)
             self.n = len(edgeset)
@@ -135,12 +167,13 @@ class LoopHole:
             rows, cols = zip(*indices)
 
             self.csr = csr_matrix((data, (rows, cols)), shape=(self.n, self.n))
+            self.degrees = list(map(lambda nr: self.getneighs(nr).size, range(self.n)))
 
     def generate_L0(self, v0: Optional[Node] = None, l0_percentage_size: float = 0.01, theoretical_model: THEORYMODEL = THEORYMODEL.WEAK) -> None:
         u = v0 if v0 is not None else Rand.choice(self.nodes)
 
-        self.L0 = L0Set(self)
-        self.L1 = L1Set()
+        self.L0 = L0Set()
+        self.L1 = L1Set() if theoretical_model == THEORYMODEL.WEAK else L1Set_Medium(self) if theoretical_model == THEORYMODEL.MEDIUM else L1Set_Strong(self)
 
         self.L1.add(u)
 
@@ -148,9 +181,15 @@ class LoopHole:
             if len(self.L1.nodes) == 0: self.exit("L1 is empty, stopping", self.L0.nodes)
             
             u = self.L1.extract_max()
-            self.L0.add(u) # sets l -> 0 and moves Lge2 neighbors to L1
+            self.L0.add(self, u) # sets l -> 0 and moves Lge2 neighbors to L1
 
-    
+    # def reach_Lge2(self) -> VRSC:
+    #     def find_w() -> int:
+    #         while True: # gets stuck if L2 empty
+    #             edge = self.
+
+
+
     def getneighs(self, i: int) -> np.ndarray:
         return self.csr.indices[self.csr.indptr[i]:self.csr.indptr[i+1]]
     
@@ -167,39 +206,87 @@ class LoopHole:
     def export(self, filename: str) -> None:
         with open(filename, "wb") as f:
             # json.dump(self.__dict__, f) #, default=lambda o: o.__dict__)
-            pickle.dump(self, f)
+            # sys.setrecursionlimit(1000000)
+            pickle.dump(self.serialize(), f)
 
     @staticmethod
     def import_graph(filename: str) -> "LoopHole":
-        raise FileNotFoundError("Not implemented")
+        # raise FileNotFoundError("Not implemented")
         with open(filename, "rb") as f:
             # return json.load(f) #, object_hook=lambda d: LoopHole.__dict__.update(d) or LoopHole(d["filename"], only_use1))
-            return pickle.load(f)
+            return LoopHole.deserialize(pickle.load(f))
         
     def exit(self, *args) -> None:
         print(*args)
         raise RuntimeError("Exiting", *args)
+    
+    def serialize(self):
+        ser = {
+            "edges": [(e.a, e.b) for e in self.edges],
+            "nodes": [(n.nr, n.oldlabel, n.l) for n in self.nodes],
+            "csr_shape": self.csr.shape,
+            "csr_data": self.csr.data.tolist(),
+            "csr_indices": self.csr.indices.tolist(),
+            "csr_indptr": self.csr.indptr.tolist(),
+            "m": self.m,
+            "n": self.n,
+            "L0": [n.nr for n in self.L0.nodes],
+            "L1": [n.nr for n in self.L1.nodes.toList()]
+        }
+        return ser
+    
+    @classmethod
+    def deserialize(cls, ser): 
+        g = cls.__new__(cls)
+        g.edges = [UEdge(*e) for e in ser["edges"]]
+        g.nodes = [Node(*n) for n in ser["nodes"]]
+        g.csr = csr_matrix((ser["csr_data"], ser["csr_indices"], ser["csr_indptr"]), shape=ser["csr_shape"])
+        g.m = ser["m"]
+        g.n = ser["n"]
+        g.L0 = L0Set.deserialize(map(lambda n: g.nodes[n], ser["L0"]))
+        # set _neighs_L0
+        for n in g.L0.nodes:
+            for neigh in n.getneighs(g):
+                if neigh.l == 0: n.addneigh_L0(neigh)
+                elif neigh.l == 1: n.addneigh_L1(neigh)
+                else: raise ValueError("neigh.l >= 2")
+
+                neigh.addneigh_L0(n)
+            
+
+        g.L1 = L1Set()
+        for n in ser["L1"]: g.L1.add(g.nodes[n])
+        return g
 
 
 
+def timed(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        end = time.time()
+        print(f"--> {func.__name__} took {end-start} seconds")
+        return result
+    return wrapper
 
 
 
-
-
+@timed
 def LOOPHOLE_FACTORY(filename: str, name: str, l0_size: float, seed: int = 42) -> LoopHole:
     try:
-        return _load_graph(name, l0_size, seed)
+        # raise FileNotFoundError
+        g = _load_graph(name, l0_size, seed)
+        print ("--- Graph loaded ---")
+        return g
     except FileNotFoundError:
-        print ("caught!!")
+        print ("--- Graph not yet created, creating it now ---")
         return _store_graph(filename, name, l0_size, seed)
-    
-    print ("arrived here!!!!!!!!!!!!!!!!!!!")
 
-def _make_graph(filename: str, name: str, l0_size: float, seed: int = 42) -> LoopHole:
+def _make_graph(filename: str, name: str, l0_size: float, seed: int = 42, v0 = None) -> LoopHole:
     Rand.seed(seed)
     g = LoopHole(filename)
-    if l0_size>0: g.generate_L0(None, l0_size)
+    if l0_size>0: g.generate_L0(v0, l0_size)
     return g
 
 def _store_graph(filename: str, name: str, l0_size: float, seed: int = 42) -> LoopHole:
@@ -208,7 +295,6 @@ def _store_graph(filename: str, name: str, l0_size: float, seed: int = 42) -> Lo
     return g
 
 def _load_graph(name: str, l0_size: float, seed: int = 42) -> LoopHole:
-    raise FileNotFoundError("Not implemented2")
     return LoopHole.import_graph("bin/"+name+str(l0_size)+"_"+str(seed)+".bin")
 
 

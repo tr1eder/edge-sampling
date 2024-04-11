@@ -1,8 +1,8 @@
 from loophole import LoopHole, edge_in, E_PARTITION
-import loophole
+import loophole, timeit
 import matplotlib.pyplot as plt
 import numpy as np
-import bisect
+import bisect, sys
 from Random import Rand
 
 import sys
@@ -70,8 +70,8 @@ def plot_histogram_with_without_tiebreaks(text, g, nodes, save=False):
         return ratioThis < ratioOther or (ratioThis == ratioOther and this.nr < other.nr)
     indexin = {node: i for i, node in enumerate(nodes)}
     d_L0s = np.array([len(node.getneighs_L0()) for node in nodes])
-    d_L1s_wout_tiebreaks = np.array([len(node.getneighs_L1())/2 + len(node.getneighs_Lge2()) for node in nodes])
-    d_L1s_with_tiebreaks = np.array([len(list(filter(lambda other: tiebreak(node, other), node.getneighs_L1()))) + len(node.getneighs_Lge2()) for node in nodes])
+    d_L1s_wout_tiebreaks = np.array([len(node.getneighs_L1(g))/2 + len(node.getneighs_Lge2(g)) for node in nodes])
+    d_L1s_with_tiebreaks = np.array([len(list(filter(lambda other: tiebreak(node, other), node.getneighs_L1(g)))) + len(node.getneighs_Lge2(g)) for node in nodes])
 
     ratioWO = d_L1s_wout_tiebreaks/d_L0s
     ratioW = d_L1s_with_tiebreaks/d_L0s
@@ -98,9 +98,9 @@ def plot_histogram_with_without_tiebreaks(text, g, nodes, save=False):
 
     ymax = max(max(countsWO), max(countsW))
     axs[0].set_xlim(-.5, xmax)
-    axs[0].set_ylim(-50, ymax)
+    axs[0].set_ylim(-ymax/200, ymax)
     axs[1].set_xlim(-.5, xmax)
-    axs[1].set_ylim(-50, ymax)
+    axs[1].set_ylim(-ymax/200, ymax)
 
     # plot 95th percentile (where 5% of edges are lost)
     percentile = 95
@@ -127,16 +127,21 @@ def plot_histogram_with_without_tiebreaks(text, g, nodes, save=False):
         plt.show()
 
 
-
+filename1 = ("testgraph/small.txt", "test")
+filename2 = ("soc-hamsterster/soc-hamsterster.edges", "soc-hamsterster")
+filename3 = ("facebook_combined/facebook_combined.txt", "ego-facebook")
+filename4 = ("git_web_ml/git_web_ml/musae_git_edges.csv", "musae-git")
+filename5 = ("gemsec_deezer_dataset/deezer_clean_data/HR_edges.csv", "gemsec-deezer")
+filename6 = ("gemsec_facebook_dataset/facebook_clean_data/artist_edges.csv", "gemsec-facebook")
+filename7 = ("twitch_gamers/large_twitch_edges.csv", "twitch-gamers")
+filename8 = ("as-skitter/as-skitter.txt", "as-skitter")
 
 if __name__ == "__main__":
     print ("--- Plotting degree distribution of L1 ---")
 
-    for filename, name in [loophole.filename4]:
-        for l0_size in [.05]:
-            for seed in [42]:
-                g = loophole.LOOPHOLE_FACTORY(filename, name, l0_size, seed)
-                nodes =     g.L1.nodes.toList()
+    # for filename, name in [loophole.filename4]:
+    #     for l0_size in [.05]:
+    #         for seed in [42]:
                 # Rand.seed(42)
                 # g = LoopHole(filename, loophole.only_use1)
                 # g.generate_L0(l0_percentage_size=l0_size)
@@ -150,8 +155,13 @@ if __name__ == "__main__":
                 
                 
                 
-                
-                # plot_histogram_with_without_tiebreaks(f"{name.upper()} with l0_size={l0_size:4.2f}", g, nodes, True)
+    filename, name = globals()[sys.argv[1]]
+    l0_size = float(sys.argv[2])
+    seed = int(sys.argv[3])
+    print (f"filename: {filename}, name: {name}, l0_size: {l0_size}")
+    g = loophole.LOOPHOLE_FACTORY(filename, name, l0_size, seed)
+    nodes =     g.L1.nodes.toList()
+    plot_histogram_with_without_tiebreaks(f"{name.upper()} with l0_size={l0_size:4.2f}", g, nodes, True)
 
 
 
