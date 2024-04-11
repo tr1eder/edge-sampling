@@ -1,9 +1,10 @@
-import re, pickle, json, sys, time
+import re, pickle, time
 import numpy as np
 # from timeit import timeit
 from subprocess import run
 from scipy.sparse import csr_matrix
-from typing import Callable, Optional, Generic, TypeVar, Set
+from typing import Callable, Optional, Set, NamedTuple, Tuple
+from collections import deque
 from functools import wraps
 from enum import Enum
 ## my ##
@@ -32,6 +33,13 @@ class THEORYMODEL(Enum):
     MEDIUM = "knows all neighbors and their degrees"
     STRONG = "knows all neighbors and knows highest-degree nodes"
 
+class VCERS(NamedTuple):
+    vertex: Node
+    comp: Set[Node]
+    edges: Set[UEdge]
+    rs_n: float
+    rs_e: float
+
 
 class E_PARTITION(Enum):
     E00 = "00"
@@ -59,8 +67,8 @@ class L_PARTITION(Enum):
 def edge_in(g: "LoopHole", e: UEdge) -> E_PARTITION:
     l_a = g.nodes[e.a].l
     l_b = g.nodes[e.b].l
-    valMin = min(l_a, l_b)
-    valMax = max(l_a, l_b)
+    valMin = min(l_a if l_a else 42, l_b if l_b else 42)
+    valMax = max(l_a if l_a else 42, l_b if l_b else 42)
     if valMin == 0: return E_PARTITION.E00 if valMax == 0 else E_PARTITION.E01
     elif valMin == 1: return E_PARTITION.E11 if valMax == 1 else E_PARTITION.E12
     return E_PARTITION.E22 if valMin == 2 else E_PARTITION.Eg2
@@ -140,6 +148,7 @@ class LoopHole:
 
     L0: L0Set
     L1: L1Set
+    L1List: list[Node]
 
     def __init__(self, filename: str, use_only: Callable[[UEdge], bool] = lambda x: True) -> None:
         """
@@ -183,15 +192,94 @@ class LoopHole:
             u = self.L1.extract_max()
             self.L0.add(self, u) # sets l -> 0 and moves Lge2 neighbors to L1
 
-    # def reach_Lge2(self) -> VRSC:
-    #     def find_w() -> int:
-    #         while True: # gets stuck if L2 empty
-    #             edge = self.
+
+        ## finish up the setup ##
+        self.L1List = self.L1.nodes.toList()
+
+
+    def init_m0(self) -> None:
+        ret = 0
+        for n in self.L0.nodes:
+            for neigh in n.getneighs(self):
+                if neigh.l == 0: ret += 1/2
+                else: ret += 1
+        self.m0 = ret
+
+    def init_m1bar(self, nroftests: int) -> None:
+        avg = 0
+        for _ in range(nroftests):
+            v = Rand.choice(self.L1List)
+            avg += v.nr_neighs(self) - len(v.getneighs_L0())/nroftests # neighs in L1 and L2
+
+        self.m1bar = avg
+
+    def init_m2bar(self, nroftests: int) -> None:
+        avg = 0
+        trs = 0
+        for _ in range(nroftests):
+            v, _, _, rs, _ = self.reach_Lge2()
+            avg += len(v.getneighs_Lge2(self)) / rs
+            trs += 1 / rs
+        
+        self.m2bar = avg / trs
+
+    def reach_Lge2(self) -> VCERS:
+        def find_w() -> Node:
+            while True: # gets stuck if L2 empty
+                v = Rand.choice(self.L1List) # ! why must we not choose u.a.r?
+                ws = v.getneighs_Lge2(self)
+                if len(ws) > 0: return Rand.choice(ws)
+        def bfs_on_Gge2(w) -> Tuple[Set[Node], Set[UEdge]]:
+            retC: Set[Node] = set()
+            retE: Set[UEdge] = set()
+            active = deque([w])
+            while len(active) > 0:
+                v = active.popleft()
+                if v in retC: continue
+                retC.add(v)
+                for u in v.getneighs_Lge2(self):
+                    if in_Leq2(u) and in_Leq2(v): 
+                        if u.nr < v.nr: # do tiebreaking
+                            retE.add(UEdge(u.nr, v.nr))
+                        continue
+                    retE.add(UEdge(u.nr, v.nr))
+                    active.append(u)
+            return retC, retE
+        def in_Leq2(v: Node) -> bool:
+            if not v.l: 
+                v.l = 2 if len(v.getneighs_L1(self)) > 0 else 42
+            return v.l == 2
+        def comp_reachability(C: Set[Node], E: Set[UEdge]) -> Tuple[float, float]:
+            rsC = 0
+            for v in C:
+                if not in_Leq2(v): continue
+                rsV = 0
+                for u in v.getneighs_L1(self):
+                    dMinus = len(u.getneighs_L0())
+                    dPlus  = len(u.getneighs_Lge2(self))
+                    rsU    = dMinus / dPlus
+                    rsV    += rsU
+                rsC += rsV
+
+            rs_n = 1/len(C) * rsC
+            rs_e = 1/len(E) * rsC
+            return rs_n, rs_e
+
+        w = find_w()
+        C, E = bfs_on_Gge2(w)
+        v = Rand.choice(list(C))
+        rs_n, rs_e = comp_reachability(C, E)
+        return VCERS(v, C, E, rs_n, rs_e)
+
+
 
 
 
     def getneighs(self, i: int) -> np.ndarray:
         return self.csr.indices[self.csr.indptr[i]:self.csr.indptr[i+1]]
+    
+    def nrneighs(self, i: int) -> int:
+        return self.csr.indptr[i+1] - self.csr.indptr[i]
     
     def plot(self) -> None:
         with open("graph.dot", "w") as dot_file:
@@ -199,7 +287,7 @@ class LoopHole:
             for n in self.nodes:
                 dot_file.write(f'    {n.nr} [label="{n.oldlabel}", color="{n.color}", width=0.3, height=0.2, style=filled];\n')
             for e in self.edges:
-                dot_file.write(f'    {e.a} -- {e.b} [color="{self.nodes[e.a].color if self.nodes[e.a].l<self.nodes[e.b].l else self.nodes[e.b].color}"];\n')
+                dot_file.write(f'    {e.a} -- {e.b} [color="{self.nodes[e.a].color if self.nodes[e.a].islayerLT(self.nodes[e.b]) else self.nodes[e.b].color}"];\n')
             dot_file.write("}\n")
         run(["fdp", "-Tpng", "graph.dot", "-o", "graph.png"], check=True)
 

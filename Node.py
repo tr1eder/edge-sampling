@@ -13,21 +13,21 @@ from typing import Optional
 class Node:
     nr: int
     oldlabel: int
-    l: int
+    l: int|None
     _neighs: Optional[list["Node"]] = None
     _neigh_L0: list["Node"]             # actually always stores the neighbors to L0
     # _neigh_L0_size: int = 0
     _neigh_L1: Optional[list["Node"]] = None # only exists if l == 0 or if it is memorized
     _neigh_Lge2: Optional[list["Node"]] = None # only exists if memorized
 
-    def __init__(self, nr: int, oldlabel: int, l: int = 42) -> None:
+    def __init__(self, nr: int, oldlabel: int, l: int|None = None) -> None:
         self.nr = nr
         self.oldlabel = oldlabel
         self.l = l
         self._neigh_L0 = []
 
     def addneigh_L0(self, nei: "Node") -> None:
-        assert self.l <= 1
+        assert self.l and self.l <= 1
         self._neigh_L0.append(nei)
         # self._neigh_L0_size += 1
     def addneigh_L1(self, nei: "Node") -> None: # only allowed to add if l == 0
@@ -39,6 +39,10 @@ class Node:
         if self._neighs is None:
             self._neighs = list(map(lambda nr: g.nodes[nr], (g.getneighs(self.nr))))
         return self._neighs
+    
+    def nr_neighs(self, g) -> int:
+        if self._neighs: return len(self._neighs)
+        else: return g.nrneighs(self.nr)
     
     def getneighs_L0(self) -> list["Node"]:
         return self._neigh_L0
@@ -68,3 +72,8 @@ class Node:
     
     def __hash__(self) -> int:
         return self.nr
+    
+    def islayerLT(self, other: "Node") -> bool:
+        if not self.l: return False
+        if not other.l: return True
+        return self.l < other.l
