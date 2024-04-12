@@ -27,7 +27,7 @@ class Node:
         self._neigh_L0 = []
 
     def addneigh_L0(self, nei: "Node") -> None:
-        assert self.l and self.l <= 1
+        assert self.l is not None and self.l <= 1
         self._neigh_L0.append(nei)
         # self._neigh_L0_size += 1
     def addneigh_L1(self, nei: "Node") -> None: # only allowed to add if l == 0
@@ -51,12 +51,14 @@ class Node:
     #     return self._neigh_L0_size
     
     def getneighs_L1(self, g) -> list["Node"]: ## ! only allowed to call after L0 created
+        assert g.l0_created == True
         if self._neigh_L1 is None:
-            self._neigh_L1 = list(filter(lambda n: n.l==1, map(lambda nr: g.nodes[nr], (g.getneighs(self.nr)))))
+            self._neigh_L1 = list(filter(lambda n: n.l is not None and n.l==1, map(lambda nr: g.nodes[nr], (g.getneighs(self.nr)))))
         return self._neigh_L1
     def getneighs_Lge2(self, g) -> list["Node"]: ## ! only allowed to call after L0 created
+        assert g.l0_created == True
         if self._neigh_Lge2 is None:
-            self._neigh_Lge2 = list(filter(lambda n: n.l>=2, map(lambda nr: g.nodes[nr], (g.getneighs(self.nr)))))
+            self._neigh_Lge2 = list(filter(lambda n: n.l is None or n.l>=2, map(lambda nr: g.nodes[nr], (g.getneighs(self.nr)))))
         return self._neigh_Lge2
 
 

@@ -12,6 +12,9 @@ from Edge import UEdge
 from Node import Node
 from Random import Rand
 from MinHeap import MaxHeap
+import Utils
+
+DEBUG = True
 
 ## CONSTANTS ##
 filename1 = ("testgraph/small.txt", "test")
@@ -35,6 +38,7 @@ class THEORYMODEL(Enum):
 
 class VCERS(NamedTuple):
     vertex: Node
+    edge: UEdge
     comp: Set[Node]
     edges: Set[UEdge]
     rs_n: float
@@ -194,16 +198,28 @@ class LoopHole:
 
 
         ## finish up the setup ##
+        self.L0List = list(self.L0.nodes)
         self.L1List = self.L1.nodes.toList()
 
+        self._L00cumsum = list(np.cumsum(list(map(lambda n: len(n.getneighs_L0()), self.L0List))))
+        self._L01cumsum = list(np.cumsum(list(map(lambda n: len(n.getneighs_L1(self)), self.L0List))))
+
+        self.D00 = lambda: (node := self.L0List[Utils.choose_from_bucket_with_prefix_probability(self._L00cumsum)], Rand.choice(node.getneighs_L0()))
+        self.D01 = lambda: (node := self.L0List[Utils.choose_from_bucket_with_prefix_probability(self._L01cumsum)], Rand.choice(node.getneighs_L1(self)))
+        self.l0_created = True
 
     def init_m0(self) -> None:
         ret = 0
         for n in self.L0.nodes:
             for neigh in n.getneighs(self):
-                if neigh.l == 0: ret += 1/2
+                if neigh.l == 0 and neigh.nr < n.nr: continue
                 else: ret += 1
         self.m0 = ret
+
+    @property 
+    def getE00size(self) -> int: return self.m0 - self.getE01size
+    @property
+    def getE01size(self) -> int: return self._L01cumsum[-1]
 
     def init_m1bar(self, nroftests: int) -> None:
         avg = 0
@@ -217,16 +233,24 @@ class LoopHole:
         avg = 0
         trs = 0
         for _ in range(nroftests):
-            v, _, _, rs, _ = self.reach_Lge2()
+            v, _, _, _, rs, _ = self.reach_LEge2()
             avg += len(v.getneighs_Lge2(self)) / rs
             trs += 1 / rs
         
         self.m2bar = avg / trs
+        
+    def reach_E1(self: "LoopHole") -> Tuple[Node, Node, float]:
+        _, v = self.D01()
+        choosefrom = v.getneighs_L1(self) + v.getneighs_Lge2(self)
+        if len(choosefrom) == 0: return self.reach_E1() # could be empty
+        w    = Rand.choice(choosefrom)
+        rs   = len(v.getneighs_L0()) / len(choosefrom)
+        return v, w, rs
 
-    def reach_Lge2(self) -> VCERS:
+    def reach_LEge2(self) -> VCERS:
         def find_w() -> Node:
             while True: # gets stuck if L2 empty
-                v = Rand.choice(self.L1List) # ! why must we not choose u.a.r?
+                u, v = self.D01()
                 ws = v.getneighs_Lge2(self)
                 if len(ws) > 0: return Rand.choice(ws)
         def bfs_on_Gge2(w) -> Tuple[Set[Node], Set[UEdge]]:
@@ -268,10 +292,96 @@ class LoopHole:
         w = find_w()
         C, E = bfs_on_Gge2(w)
         v = Rand.choice(list(C))
+        e = Rand.choice(list(E))
         rs_n, rs_e = comp_reachability(C, E)
-        return VCERS(v, C, E, rs_n, rs_e)
+        return VCERS(v, e, C, E, rs_n, rs_e)
+    
+    def calculate_rs0_E2(self, nroftests: int, eps: float) -> None:
+        """ Calculate baseline reachability for E2, should be ~1/100? for decent performance """
+        rss = []
+        for _ in range(nroftests):
+            _, _, rs_e = self.reach_E1()
+            rss.append(rs_e)
+            
+        self.rs0_E2 = self.estimate_baseline_reachability(rss, eps)
+
+    def calculate_rs0_E1(self, nroftests: int, eps: float) -> None:
+        """ Calculate baseline reachability for E1, should be ~1/15? for decent performance """
+        rss = []
+        for _ in range(nroftests):
+            _, _, _, _, _, rs_e = self.reach_LEge2()
+            rss.append(rs_e)
+        
+        self.rs0_E1 = self.estimate_baseline_reachability(rss, eps)
+
+    def estimate_baseline_reachability(self, rss: list[float], eps: float) -> float:
+        rss.sort()
+        np_rss = np.array(rss)
+        w = rss[0] / np_rss
+        cumsum = np.cumsum(w)
+        cw = cumsum / cumsum[-1]
+        # ri = cw[Utils.choose_from_bucket_with_prefix_probability(cw, eps)]
+        ri = float(np.argmax(cw >= eps))
+        return ri
 
 
+    def sample_edges(self: "LoopHole", num_samples: int) -> list[UEdge]:
+        """
+        Samples num_samples edges from the graph G
+        """
+
+        assert hasattr(self, "m0"), "m0 not initialized, call init_m0"
+        assert hasattr(self, "m1bar"), "m1bar not initialized, call init_m1bar"
+        assert hasattr(self, "m2bar"), "m2bar not initialized, call init_m2bar"
+        assert hasattr(self, "rs0_E2"), "rs0_E2 not initialized, call calculate_rs0_E2"
+        assert hasattr(self, "rs0_E1"), "rs0_E1 not initialized, call calculate_rs0_E1"
+        e_estimates = [self.m0, self.m1bar, self.m2bar]
+
+        edges: list[UEdge] = []
+        for _ in range(num_samples):
+            bucket = Utils.choose_from_bucket_with_probability(e_estimates)
+            if bucket == 0:
+                edges.append(self.sample_edge_E0())
+            elif bucket == 1:
+                edges.append(self.sample_edge_E1())
+            else:
+                edges.append(self.sample_edge_E2())
+        return edges
+    
+    def sample_edge_E0(self: "LoopHole") -> UEdge:
+        chooseFrom = Utils.choose_from_bucket_with_probability([self.getE00size, self.getE01size])
+        if chooseFrom == 0: return UEdge.factory(self.D00())
+        else: return UEdge.factory(self.D01())
+
+    def sample_edge_E1(self: "LoopHole") -> UEdge:
+        def sample_once():
+            # _, v = self.D01()
+            # choosefrom = v.getneighs_L1(self) + v.getneighs_Lge2(self)
+            # if len(choosefrom) == 0: return sample_once() # could be empty
+            # w    = Rand.choice(choosefrom)
+            # rs   = len(v.getneighs_L0()) / len(choosefrom)
+            return self.reach_E1()
+        
+        v, w, rs = sample_once()
+        prob = self.rs0_E1 / rs
+        if DEBUG and prob > 1: print(f"undersampling E1 where prob > 1: {prob}")
+
+        if Rand.random() < prob: return UEdge.factory((v, w))
+        else: 
+            if DEBUG and (w.l is None or w.l > 1): print(f"discarding E1, could reuse it in reach_LEge2")
+            return self.sample_edge_E1()
+
+    def sample_edge_E2(self: "LoopHole") -> UEdge:
+        def sample_once():
+            _, e, _, _, _, rs_e = self.reach_LEge2()
+            return e, rs_e
+        
+        e, rs_e = sample_once()
+        prob = self.rs0_E2 / rs_e
+        if DEBUG and prob > 1: print(f"undersampling E2 where prob > 1: {prob}")
+
+        if Rand.random() < prob: return e
+        else: return self.sample_edge_E2()
 
 
 
@@ -363,7 +473,7 @@ def timed(func):
 @timed
 def LOOPHOLE_FACTORY(filename: str, name: str, l0_size: float, seed: int = 42) -> LoopHole:
     try:
-        # raise FileNotFoundError
+        raise FileNotFoundError
         g = _load_graph(name, l0_size, seed)
         print ("--- Graph loaded ---")
         return g

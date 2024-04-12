@@ -1,4 +1,7 @@
 from abc import ABC, abstractmethod
+from typing import Tuple
+
+from Node import Node
 
 
 class Edge(ABC):
@@ -28,7 +31,9 @@ class UEdge(Edge):
     # Rep Inv: self.a < self.b
     a: int
     b: int
-    # l_a: int = 42
+    @staticmethod
+    def factory(tup: Tuple[Node, Node]) -> "UEdge":
+        return UEdge(tup[0].nr, tup[1].nr)
     def __init__(self, a: int, b: int) -> None:
         if a == b: raise ValueError("a and b cannot be equal")
         self.a = min(a, b)

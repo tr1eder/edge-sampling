@@ -1,4 +1,4 @@
-import snap, subprocess
+import snap, subprocess # type: ignore # !
 import numpy as np
 from typing import Set, Tuple, Union, Callable, Optional, NamedTuple
 from enum import Enum
@@ -148,7 +148,7 @@ class LoopHole():
                 rsV = 0
                 for u in self.neighsOf(v).intersection(self.L1): # u in N(v) cap L1
                     dMinus = len(self.neighsOf(u).intersection(self.L0))
-                    dPlus  = len(self.neighsOf(v).intersection(self.L1))
+                    dPlus  = len(self.neighsOf(v).intersection(self.L1)) #! mistake, should be cap L2!!
                     rsU    = dMinus / dPlus
                     rsV    += rsU
                 rsC += rsV

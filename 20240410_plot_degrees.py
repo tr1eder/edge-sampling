@@ -14,10 +14,11 @@ def plot_Lx_degree_distribution(text, g: loophole.LoopHole, axs, nodes):
     zipped = list(zip(degrees_L0, degrees_L1, degrees_Lge2))
     zipped.sort(key=lambda x: sum(x))
     zipped = np.array(zipped)
+    zipped = zipped[:int(len(zipped)*0.95)]
 
-    axs.bar(np.arange(len(nodes)), zipped[:,0], color='r', label='L0')
-    axs.bar(np.arange(len(nodes)), zipped[:,1], bottom=zipped[:,0], color='g', label='L1')
-    axs.bar(np.arange(len(nodes)), zipped[:,2], bottom=zipped[:,0]+zipped[:,1], color='b', label='Lge2')
+    axs.bar(np.arange(len(zipped)), zipped[:,0], color='r', label='L0')
+    axs.bar(np.arange(len(zipped)), zipped[:,1], bottom=zipped[:,0], color='g', label='L1')
+    axs.bar(np.arange(len(zipped)), zipped[:,2], bottom=zipped[:,0]+zipped[:,1], color='b', label='Lge2')
 
     axs.set_xlabel("Nodes")
     axs.set_ylabel("Degree")
@@ -37,7 +38,7 @@ if __name__ == "__main__":
         g = loophole.LOOPHOLE_FACTORY(filename, name, l0_size, seed)
 
         nodes_L1 = g.L1.nodes.toList()
-        nodes_Lge2 = list(filter(lambda n: n.l > 1, map(lambda nr: g.nodes[nr], np.arange(g.n))))
+        nodes_Lge2 = list(filter(lambda n: n.l is None or n.l > 1, map(lambda nr: g.nodes[nr], np.arange(g.n))))
 
         plot_Lx_degree_distribution(f"L1 with l0_size={l0_size:4.2f}", g, axs[0, i], nodes_L1)
         plot_Lx_degree_distribution(f"L2 with l0_size={l0_size:4.2f}", g, axs[1, i], nodes_Lge2)
