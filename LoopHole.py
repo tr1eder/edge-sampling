@@ -14,11 +14,47 @@ from Random import Rand
 from MinHeap import MaxHeap
 import Utils
 
-DEBUG = True
+class HighestKDegreeNodes:
+    def __init__(self, g: "LoopHole", k: int) -> None:
+        self.g = g
+        self.k = k
+        self.nodes: list[Node] = []
+    def add(self, node: Node) -> None:
+        if len(self.nodes) < self.k:
+            self.nodes.append(node)
+            self.nodes.sort(key=lambda n: len(n.getneighs(self.g)), reverse=True)
+        else:
+            if len(node.getneighs(self.g)) > len(self.nodes[-1].getneighs(self.g)):
+                self.nodes[-1] = node
+                self.nodes.sort(key=lambda n: len(n.getneighs(self.g)), reverse=True)
+    def __str__(self) -> str:
+        return f"Highest{self.k}DegreeNodes({[len(n.getneighs(self.g)) for n in self.nodes]})"
+
+## type A = "VAL1" | "VAL2" | "VAL3"+Int
+class HWEnum(Enum):
+    UndersamplingE1 = 1,
+    UndersamplingE2 = 2,
+    DiscardingE1 = 3,
+    DiscardingE2 = 4,
+    DiscardingE1AndUseForE2 = 5
+class HoleWarning: 
+    name: HWEnum
+    value: float|None
+    def __init__(self, name: HWEnum, value: float|None = None) -> None:
+        self.name = name
+        self.value = value
+def HWcount(entry: HWEnum) -> int:
+    return len(list(filter(lambda x: x.name == entry, printed)))
+
+DEBUG = False
+WARNINGS = False
+printed = []
+def myprint(arg: HoleWarning):
+    if WARNINGS: printed.append(arg)
 
 ## CONSTANTS ##
-filename1 = ("testgraph/small.txt", "test")
-filename2 = ("soc-hamsterster/soc-hamsterster.edges", "soc-hamsterster")
+filename1 = ("loopgraph/loopgraph.txt", "loopgraph")
+filename2 = ("soc-hamsterster/soc-hamsterster.edges", "soc-hamsterster") # is not connected !!
 filename3 = ("facebook_combined/facebook_combined.txt", "ego-facebook")
 filename4 = ("git_web_ml/git_web_ml/musae_git_edges.csv", "musae-git")
 filename5 = ("gemsec_deezer_dataset/deezer_clean_data/HR_edges.csv", "gemsec-deezer")
@@ -36,12 +72,14 @@ class THEORYMODEL(Enum):
     MEDIUM = "knows all neighbors and their degrees"
     STRONG = "knows all neighbors and knows highest-degree nodes"
 
-class VCERS(NamedTuple):
+class VCRS(NamedTuple):
     vertex: Node
-    edge: UEdge
     comp: Set[Node]
-    edges: Set[UEdge]
     rs_n: float
+
+class ECRS(NamedTuple):
+    edge: UEdge
+    comp: Set[UEdge]
     rs_e: float
 
 
@@ -71,8 +109,8 @@ class L_PARTITION(Enum):
 def edge_in(g: "LoopHole", e: UEdge) -> E_PARTITION:
     l_a = g.nodes[e.a].l
     l_b = g.nodes[e.b].l
-    valMin = min(l_a if l_a else 42, l_b if l_b else 42)
-    valMax = max(l_a if l_a else 42, l_b if l_b else 42)
+    valMin = min(l_a if l_a is not None else 42, l_b if l_b is not None else 42)
+    valMax = max(l_a if l_a is not None else 42, l_b if l_b is not None else 42)
     if valMin == 0: return E_PARTITION.E00 if valMax == 0 else E_PARTITION.E01
     elif valMin == 1: return E_PARTITION.E11 if valMax == 1 else E_PARTITION.E12
     return E_PARTITION.E22 if valMin == 2 else E_PARTITION.Eg2
@@ -116,6 +154,8 @@ class L1Set:
         self.nodes.insert(node, len(node.getneighs_L0()))
     def increase_key(self, node: Node) -> None:
         self.nodes.increase_key(node, len(node.getneighs_L0()))
+    def set_key(self, node: Node, key: int) -> None:
+        self.nodes.increase_key(node, key)
     def extract_max(self) -> Node:
         return self.nodes.extract_max()
     
@@ -181,7 +221,9 @@ class LoopHole:
 
             self.csr = csr_matrix((data, (rows, cols)), shape=(self.n, self.n))
             self.degrees = list(map(lambda nr: self.getneighs(nr).size, range(self.n)))
-
+            self.L0 = L0Set()
+            self.L1 = L1Set()
+            
     def generate_L0(self, v0: Optional[Node] = None, l0_percentage_size: float = 0.01, theoretical_model: THEORYMODEL = THEORYMODEL.WEAK) -> None:
         u = v0 if v0 is not None else Rand.choice(self.nodes)
 
@@ -198,15 +240,40 @@ class LoopHole:
 
 
         ## finish up the setup ##
+        self._l0_finish_setup()
+        # self.L0List = list(self.L0.nodes)
+        # self.L1List = self.L1.nodes.toList()
+
+        # self.l0_created = True
+        # self._L00cumsum = list(np.cumsum(list(map(lambda n: len(n.getneighs_L0()), self.L0List))))
+        # self._L01cumsum = list(np.cumsum(list(map(lambda n: len(n.getneighs_L1(self)), self.L0List))))
+
+        # self.D00 = lambda: (node := self.L0List[Utils.choose_from_bucket_with_prefix_probability(self._L00cumsum)], Rand.choice(node.getneighs_L0()))
+        # self.D01 = lambda: (node := self.L0List[Utils.choose_from_bucket_with_prefix_probability(self._L01cumsum)], Rand.choice(node.getneighs_L1(self)))
+
+    def load_L0(self, L0: list[int]) -> None:
+        self.L0 = L0Set() #.deserialize(map(lambda n: self.nodes[n], L0))
+        self.L1 = L1Set()
+        for n in L0:
+            self.L1.add(self.nodes[n])
+        for n in L0:
+            self.L1.set_key(self.nodes[n], 100)
+            u = self.L1.extract_max()
+            assert u == self.nodes[n]
+            self.L0.add(self, u)
+
+        self._l0_finish_setup()
+
+    def _l0_finish_setup(self) -> None:
         self.L0List = list(self.L0.nodes)
         self.L1List = self.L1.nodes.toList()
 
+        self.l0_created = True
         self._L00cumsum = list(np.cumsum(list(map(lambda n: len(n.getneighs_L0()), self.L0List))))
         self._L01cumsum = list(np.cumsum(list(map(lambda n: len(n.getneighs_L1(self)), self.L0List))))
 
         self.D00 = lambda: (node := self.L0List[Utils.choose_from_bucket_with_prefix_probability(self._L00cumsum)], Rand.choice(node.getneighs_L0()))
         self.D01 = lambda: (node := self.L0List[Utils.choose_from_bucket_with_prefix_probability(self._L01cumsum)], Rand.choice(node.getneighs_L1(self)))
-        self.l0_created = True
 
     def init_m0(self) -> None:
         ret = 0
@@ -225,103 +292,135 @@ class LoopHole:
         avg = 0
         for _ in range(nroftests):
             v = Rand.choice(self.L1List)
-            avg += v.nr_neighs(self) - len(v.getneighs_L0())/nroftests # neighs in L1 and L2
+            # avg += v.nr_neighs(self) - len(v.getneighs_L0()) #/nroftests # neighs in L1 and L2
+            avg += len(v.getneighs_L1(self))/2 + len(v.getneighs_Lge2(self)) #! slow
 
-        self.m1bar = avg
+        self.m1bar = round(avg*len(self.L1List)/nroftests)
+
+    def init_l2bar(self, s1: int, sge2: int) -> None:
+        dPlus = 0
+        for _ in range(s1):
+            v      = Rand.choice(self.L1List)
+            dPlus += len(v.getneighs_Lge2(self))
+        dPlusAvg = dPlus/s1
+
+        dMinus, trs = 0, 0
+        for _ in range(sge2):
+            v, _, rs_n = self.reach_Lge2()
+            dMinus    += len(v.getneighs_L1(self)) / rs_n ## can be implemented by Bloom-Filter
+            trs       += 1 / rs_n
+        dMinusAvg = dMinus / trs
+
+        self.l2bar = round(len(self.L1List) * dPlusAvg / dMinusAvg)
 
     def init_m2bar(self, nroftests: int) -> None:
+        assert hasattr(self, "l2bar"), "l2bar not initialized, call init_l2bar"
         avg = 0
         trs = 0
         for _ in range(nroftests):
-            v, _, _, _, rs, _ = self.reach_LEge2()
-            avg += len(v.getneighs_Lge2(self)) / rs
+            v, _, rs = self.reach_Lge2()
+            avg += len(v.getneighs_Lge2(self)) / rs / 2
             trs += 1 / rs
         
-        self.m2bar = avg / trs
+        self.m2bar = round(self.l2bar * avg / trs)
         
     def reach_E1(self: "LoopHole") -> Tuple[Node, Node, float]:
         _, v = self.D01()
-        choosefrom = v.getneighs_L1(self) + v.getneighs_Lge2(self)
+        choosefrom = list(filter(lambda neigh: neigh.nr < v.nr, v.getneighs_L1(self))) + v.getneighs_Lge2(self) # tiebreaking, getneighs_L1 can be implemented by Bloom-Filter
         if len(choosefrom) == 0: return self.reach_E1() # could be empty
         w    = Rand.choice(choosefrom)
         rs   = len(v.getneighs_L0()) / len(choosefrom)
         return v, w, rs
-
-    def reach_LEge2(self) -> VCERS:
-        def find_w() -> Node:
-            while True: # gets stuck if L2 empty
-                u, v = self.D01()
-                ws = v.getneighs_Lge2(self)
-                if len(ws) > 0: return Rand.choice(ws)
-        def bfs_on_Gge2(w) -> Tuple[Set[Node], Set[UEdge]]:
-            retC: Set[Node] = set()
-            retE: Set[UEdge] = set()
-            active = deque([w])
-            while len(active) > 0:
-                v = active.popleft()
-                if v in retC: continue
-                retC.add(v)
-                for u in v.getneighs_Lge2(self):
-                    if in_Leq2(u) and in_Leq2(v): 
-                        if u.nr < v.nr: # do tiebreaking
-                            retE.add(UEdge(u.nr, v.nr))
-                        continue
-                    retE.add(UEdge(u.nr, v.nr))
-                    active.append(u)
-            return retC, retE
-        def in_Leq2(v: Node) -> bool:
-            if not v.l: 
-                v.l = 2 if len(v.getneighs_L1(self)) > 0 else 42
-            return v.l == 2
-        def comp_reachability(C: Set[Node], E: Set[UEdge]) -> Tuple[float, float]:
-            rsC = 0
-            for v in C:
-                if not in_Leq2(v): continue
-                rsV = 0
-                for u in v.getneighs_L1(self):
-                    dMinus = len(u.getneighs_L0())
-                    dPlus  = len(u.getneighs_Lge2(self))
-                    rsU    = dMinus / dPlus
-                    rsV    += rsU
-                rsC += rsV
-
-            rs_n = 1/len(C) * rsC
-            rs_e = 1/len(E) * rsC
-            return rs_n, rs_e
-
-        w = find_w()
-        C, E = bfs_on_Gge2(w)
-        v = Rand.choice(list(C))
-        e = Rand.choice(list(E))
-        rs_n, rs_e = comp_reachability(C, E)
-        return VCERS(v, e, C, E, rs_n, rs_e)
     
-    def calculate_rs0_E2(self, nroftests: int, eps: float) -> None:
-        """ Calculate baseline reachability for E2, should be ~1/100? for decent performance """
+    def _find_w(self) -> Node:
+        while True: # gets stuck if L2 empty
+            u, v = self.D01()
+            ws = v.getneighs_Lge2(self)
+            if len(ws) > 0: return Rand.choice(ws)
+    def _bfs_on_Gge2(self, w) -> Tuple[Set[Node], Set[UEdge]]:
+        retC: Set[Node] = set()
+        retE: Set[UEdge] = set()
+        active = deque([w])
+        while len(active) > 0:
+            v = active.popleft()
+            if v in retC: continue
+            retC.add(v)
+            for u in v.getneighs_Lge2(self):
+                if self._in_Leq2(u) and self._in_Leq2(v): 
+                    if u.nr < v.nr: # do tiebreaking, give edge to bigger node
+                        retE.add(UEdge(u.nr, v.nr))
+                    continue
+                retE.add(UEdge(u.nr, v.nr))
+                active.append(u)
+        if WARNINGS and len(retC) > 200:
+            ### & have found a huge component !!
+            print ("BFS on C-size:", len(retC), "E-size:", len(retE), "rsC", self.comp_reachability(retC, retE)/len(retC), "rsE:", self.comp_reachability(retC, retE)/len(retE),  "vs", "rs0_E2:", self.rs0_E2 if hasattr(self, "rs0_E2") else "not initialized")
+        
+            highestC = HighestKDegreeNodes(self, 10)
+            for n in retC: highestC.add(n)
+            print("Nodes in C:", highestC)
+
+            hightestTot = HighestKDegreeNodes(self, 10)
+            for n in self.nodes: hightestTot.add(n)
+            print("Nodes in Total:", hightestTot)
+
+            assert False, "huge component found"
+
+        return retC, retE
+    def _in_Leq2(self, v: Node) -> bool:
+        if v.l is None: v.l = 2 if len(v.getneighs_L1(self)) > 0 else 42 # getneighs_L1 can be implemented by Bloom-Filter
+        return v.l == 2
+    def comp_reachability(self, C: Set[Node], E: Set[UEdge]) -> float:
+        rsC = 0
+        for v in C:
+            if not self._in_Leq2(v): continue
+            rsV = 0
+            for u in v.getneighs_L1(self): # getneighs_L1 can be implemented by Bloom-Filter
+                dMinus = len(u.getneighs_L0())
+                dPlus  = len(u.getneighs_Lge2(self))
+                rsU    = dMinus / dPlus
+                rsV    += rsU
+            rsC += rsV
+        return rsC
+    def reach_Lge2(self: "LoopHole") -> VCRS:
+        C, E = self._bfs_on_Gge2(self._find_w())
+        rsC = self.comp_reachability(C, E)
+        v = Rand.choice(list(C))
+        return VCRS(v, C, rsC/len(C))
+    def reach_Ege2(self) -> ECRS:
+        C, E = self._bfs_on_Gge2(self._find_w())
+        if len(E) == 0: return self.reach_Ege2() # could be empty
+        rsC = self.comp_reachability(C, E)
+        e = Rand.choice(list(E))
+        return ECRS(e, E, rsC/len(E))
+
+    def calculate_rs0_E1(self, nroftests: int, eps: float) -> list[float]:
+        """ Calculate baseline reachability for E1, should be ~1/15*avg(rs0_E1)? for decent performance """
         rss = []
         for _ in range(nroftests):
             _, _, rs_e = self.reach_E1()
             rss.append(rs_e)
-            
-        self.rs0_E2 = self.estimate_baseline_reachability(rss, eps)
-
-    def calculate_rs0_E1(self, nroftests: int, eps: float) -> None:
-        """ Calculate baseline reachability for E1, should be ~1/15? for decent performance """
-        rss = []
-        for _ in range(nroftests):
-            _, _, _, _, _, rs_e = self.reach_LEge2()
-            rss.append(rs_e)
         
         self.rs0_E1 = self.estimate_baseline_reachability(rss, eps)
+        return rss
+    
+    def calculate_rs0_E2(self, nroftests: int, eps: float) -> list[float]:
+        """ Calculate baseline reachability for E2, should be ~1/100*avg(rs0_E2)? for decent performance """
+        rss = []
+        for _ in range(nroftests):
+            _, _, rs_e = self.reach_Ege2()
+            rss.append(rs_e)
+            
+        self.rs0_E2 = self.estimate_baseline_reachability(rss, eps)
+        return rss
 
     def estimate_baseline_reachability(self, rss: list[float], eps: float) -> float:
-        rss.sort()
-        np_rss = np.array(rss)
-        w = rss[0] / np_rss
+        """ A higher baseline reachability means a faster algorithms that undersamples more often """
+        np_rss = np.array(sorted(rss))
+        w = np_rss[0] / np_rss
         cumsum = np.cumsum(w)
         cw = cumsum / cumsum[-1]
-        # ri = cw[Utils.choose_from_bucket_with_prefix_probability(cw, eps)]
-        ri = float(np.argmax(cw >= eps))
+        ri = np_rss[(np.argmax(cw >= eps))]
         return ri
 
 
@@ -330,6 +429,7 @@ class LoopHole:
         Samples num_samples edges from the graph G
         """
 
+        assert hasattr(self, "l0_created") and self.l0_created, "L0 not initialized, call generate_L0"
         assert hasattr(self, "m0"), "m0 not initialized, call init_m0"
         assert hasattr(self, "m1bar"), "m1bar not initialized, call init_m1bar"
         assert hasattr(self, "m2bar"), "m2bar not initialized, call init_m2bar"
@@ -355,33 +455,52 @@ class LoopHole:
 
     def sample_edge_E1(self: "LoopHole") -> UEdge:
         def sample_once():
-            # _, v = self.D01()
-            # choosefrom = v.getneighs_L1(self) + v.getneighs_Lge2(self)
-            # if len(choosefrom) == 0: return sample_once() # could be empty
-            # w    = Rand.choice(choosefrom)
-            # rs   = len(v.getneighs_L0()) / len(choosefrom)
             return self.reach_E1()
         
         v, w, rs = sample_once()
         prob = self.rs0_E1 / rs
-        if DEBUG and prob > 1: print(f"undersampling E1 where prob > 1: {prob}")
+        if DEBUG and prob > 1: 
+            print(f"undersampling E1 where prob > 1: {prob}")
+        if WARNINGS and prob > 1:
+            myprint(HoleWarning(HWEnum.UndersamplingE1, prob))
 
         if Rand.random() < prob: return UEdge.factory((v, w))
         else: 
-            if DEBUG and (w.l is None or w.l > 1): print(f"discarding E1, could reuse it in reach_LEge2")
+            if DEBUG and (w.l is None or w.l > 1): 
+                print(f"discarding E1, could reuse it in reach_LEge2")
+            if WARNINGS and (w.l is None or w.l > 1):
+                myprint(HoleWarning(HWEnum.DiscardingE1AndUseForE2))
+            if WARNINGS:
+                myprint(HoleWarning(HWEnum.DiscardingE1))
             return self.sample_edge_E1()
 
     def sample_edge_E2(self: "LoopHole") -> UEdge:
         def sample_once():
-            _, e, _, _, _, rs_e = self.reach_LEge2()
-            return e, rs_e
+            e, _, rs_e = self.reach_Ege2()
+            return e, self.rs0_E2 / rs_e
         
-        e, rs_e = sample_once()
-        prob = self.rs0_E2 / rs_e
-        if DEBUG and prob > 1: print(f"undersampling E2 where prob > 1: {prob}")
 
-        if Rand.random() < prob: return e
-        else: return self.sample_edge_E2()
+        while True:
+            e, prob = sample_once()
+            if prob > 1:
+                if DEBUG: print(f"undersampling E2 where prob > 1: {prob}")
+                if WARNINGS: myprint(HoleWarning(HWEnum.UndersamplingE2, prob))
+            if Rand.random() < prob: return e
+
+            if WARNINGS: myprint(HoleWarning(HWEnum.DiscardingE2))
+            continue
+        
+        # e, prob = sample_once()
+        # if DEBUG and prob > 1: 
+        #     print(f"undersampling E2 where prob > 1: {prob}")
+        # if WARNINGS and prob > 1:
+        #     myprint(HoleWarning(HWEnum.UndersamplingE2, prob))
+
+        # if Rand.random() < prob: return e
+        # else: 
+        #     if WARNINGS:
+        #         myprint(HoleWarning(HWEnum.DiscardingE2))
+        #     return self.sample_edge_E2()
 
 
 
@@ -391,10 +510,23 @@ class LoopHole:
     def nrneighs(self, i: int) -> int:
         return self.csr.indptr[i+1] - self.csr.indptr[i]
     
+    def bfs(self, start: Node) -> list[bool]:
+        visited = [False] * self.n
+        active = deque([start])
+        while len(active) > 0:
+            v = active.popleft()
+            if visited[v.nr]: continue
+
+            visited[v.nr] = True
+            for u in v.getneighs(self):
+                active.append(u)
+        return visited
+    
     def plot(self) -> None:
         with open("graph.dot", "w") as dot_file:
             dot_file.write("graph G {\n")
             for n in self.nodes:
+                if DEBUG: print(n.nr, n.oldlabel, n.l, n.color)
                 dot_file.write(f'    {n.nr} [label="{n.oldlabel}", color="{n.color}", width=0.3, height=0.2, style=filled];\n')
             for e in self.edges:
                 dot_file.write(f'    {e.a} -- {e.b} [color="{self.nodes[e.a].color if self.nodes[e.a].islayerLT(self.nodes[e.b]) else self.nodes[e.b].color}"];\n')
@@ -403,15 +535,11 @@ class LoopHole:
 
     def export(self, filename: str) -> None:
         with open(filename, "wb") as f:
-            # json.dump(self.__dict__, f) #, default=lambda o: o.__dict__)
-            # sys.setrecursionlimit(1000000)
             pickle.dump(self.serialize(), f)
 
     @staticmethod
     def import_graph(filename: str) -> "LoopHole":
-        # raise FileNotFoundError("Not implemented")
         with open(filename, "rb") as f:
-            # return json.load(f) #, object_hook=lambda d: LoopHole.__dict__.update(d) or LoopHole(d["filename"], only_use1))
             return LoopHole.deserialize(pickle.load(f))
         
     def exit(self, *args) -> None:
@@ -442,6 +570,8 @@ class LoopHole:
         g.m = ser["m"]
         g.n = ser["n"]
         g.L0 = L0Set.deserialize(map(lambda n: g.nodes[n], ser["L0"]))
+
+        # g.load_L0(ser["L0"])
         # set _neighs_L0
         for n in g.L0.nodes:
             for neigh in n.getneighs(g):
@@ -454,6 +584,8 @@ class LoopHole:
 
         g.L1 = L1Set()
         for n in ser["L1"]: g.L1.add(g.nodes[n])
+        g._l0_finish_setup()
+        for i, n in enumerate(g.nodes): assert n.nr == i
         return g
 
 
@@ -468,27 +600,37 @@ def timed(func):
         return result
     return wrapper
 
+def LOOPHOLE_FACTORY_CONNECTED(filename: str, name: str, l0_size: float, seed: int = 42, theorymodel = THEORYMODEL.WEAK) -> LoopHole:
+    _g = LOOPHOLE_FACTORY(filename, name, l0_size, seed, theorymodel=theorymodel)
+    _visited_nr = _g.bfs(_g.nodes[0])
+    if all(_visited_nr): return _g
 
+    _visited_oldlabel = [False] * (_g.n+1)
+    for ind, v in enumerate(_visited_nr): 
+        if v: _visited_oldlabel[_g.nodes[ind].oldlabel] = True
+    
+    only_use = lambda e: _visited_oldlabel[e.a] and _visited_oldlabel[e.b]
+    return LOOPHOLE_FACTORY(filename, name, l0_size, seed, use_only=only_use, theorymodel=theorymodel)
 
 @timed
-def LOOPHOLE_FACTORY(filename: str, name: str, l0_size: float, seed: int = 42) -> LoopHole:
+def LOOPHOLE_FACTORY(filename: str, name: str, l0_size: float, seed: int = 42, use_only = lambda x: True, theorymodel = THEORYMODEL.WEAK) -> LoopHole:
+    Rand.seed(seed)
     try:
-        raise FileNotFoundError
+        raise FileNotFoundError # storing files does not support different theory models
         g = _load_graph(name, l0_size, seed)
         print ("--- Graph loaded ---")
         return g
     except FileNotFoundError:
         print ("--- Graph not yet created, creating it now ---")
-        return _store_graph(filename, name, l0_size, seed)
+        return _store_graph(filename, name, l0_size, seed, use_only=use_only, theorymodel=theorymodel)
 
-def _make_graph(filename: str, name: str, l0_size: float, seed: int = 42, v0 = None) -> LoopHole:
-    Rand.seed(seed)
-    g = LoopHole(filename)
-    if l0_size>0: g.generate_L0(v0, l0_size)
+def _make_graph(filename: str, name: str, l0_size: float, seed: int = 42, v0 = None, use_only = lambda x: True, theorymodel = THEORYMODEL.WEAK) -> LoopHole:
+    g = LoopHole(filename, use_only=use_only)
+    if l0_size>0: g.generate_L0(v0, l0_size, theoretical_model=theorymodel)
     return g
 
-def _store_graph(filename: str, name: str, l0_size: float, seed: int = 42) -> LoopHole:
-    g = _make_graph(filename, name, l0_size, seed)
+def _store_graph(filename: str, name: str, l0_size: float, seed: int = 42, use_only = lambda x: True, theorymodel = THEORYMODEL.WEAK) -> LoopHole:
+    g = _make_graph(filename, name, l0_size, seed, use_only=use_only, theorymodel=theorymodel)
     g.export("bin/"+name+str(l0_size)+"_"+str(seed)+".bin")
     return g
 
@@ -500,12 +642,23 @@ def _load_graph(name: str, l0_size: float, seed: int = 42) -> LoopHole:
 
 if __name__ == "__main__":
     Rand.seed(42)
+    print ("--- Testing ---")
+    file = filename7
+    g = LOOPHOLE_FACTORY_CONNECTED(file[0], file[1], 0.05)
 
+    g.init_m0()
+    g.init_m1bar(1000)
+    g.init_l2bar(1000, 1000)
+    g.init_m2bar(1000)
+    g.calculate_rs0_E1(200, 0.4)
+    g.calculate_rs0_E2(200, 0.3)
 
-    # for filename, name in [filename6]:
-    #     for i in range(0,6): 
-    #         print(f"l0_size:{0.02*i}", timeit(lambda: make_graph(filename, 0.02*i), number=1),"s") 
+    print ("Nodes:", g.n, "Edges:", g.m)
+    # print (f"m0: {g.m0}, m1bar: {g.m1bar}, m2bar: {g.m2bar}, l2bar: {g.l2bar}")
+    # print (f"m0: {len(list(filter(lambda e: edge_in(g, e).is_E0, g.edges)))}, m1_is: {len(list(filter(lambda e: edge_in(g, e).is_E1, g.edges)))}, m2_is: {len(list(filter(lambda e: edge_in(g, e).is_E2, g.edges)))}, l2_is: {len(list(filter(lambda n: n.l is None or n.l >= 2, g.nodes)))}")
+    # print ("rs0_E1:", g.rs0_E1, "rs0_E2:", g.rs0_E2)
 
-    g = LOOPHOLE_FACTORY(filename8[0], filename8[1], 0)
-    print(g.n, g.m)
+    # g.sample_edges(10)
+
+    print ("--- DONE ---")
     # g.plot()

@@ -52,6 +52,9 @@ class UEdge(Edge):
     def inrange(self, start: int, end: int) -> bool:
         return start <= self.a < self.b < end
     
+    def l(self, g) -> int:
+        return min(g.nodes[self.a].l, g.nodes[self.b].l)
+    
     # @property
     # def color(self) -> str:
     #     return "red" if min() == 0 else "blue" if self.l == 1 else "gray"
