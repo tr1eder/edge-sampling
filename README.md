@@ -1,9 +1,9 @@
 # Edge-sampling
-A work-in-progress on sampling edges/triangles or other structures in a large social network by exploiting the core-periphery structure.
+A work-in-progress on sampling edges or other structures in a large social network by exploiting the core-periphery structure.
 
 ---
 
-## Pseudo-python-code
+## Pseudocode
 ```python
 def sample_E0:
 	choose (P=m00/m0): return E00.sample() # from undirected subgraph L0
@@ -37,7 +37,3 @@ def sample_E2:
   - red nodes/edges are of $L_0 / E_0$,
   - blue nodes/edges are of $L_1 / E_1$,
   - black nodes/edges are of $L_{\ge2} / E_{\ge2}$
-
-
-## TODO
-- sampling from $E_1, E_2$, estimating $E_1, E_2$
